@@ -1,0 +1,11 @@
+﻿FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY src/ ./src/
+RUN useradd -m -u 1001 raguser && chown -R raguser:raguser /app
+USER raguser
+ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8000
+CMD ["python", "src/api.py"]
