@@ -36,15 +36,45 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Ensure Qdrant collection exists on startup."""
+    """Ensure Qdrant collection exists on startup and auto-ingest if empty."""
     logger.info("Starting RAG pipeline API...")
     try:
         await ensure_collection()
         logger.info("Qdrant collection ready")
+
+        # Auto-ingest on startup if collection is empty
+        if os.getenv("INGEST_ON_STARTUP", "false").lower() == "true":
+            info = await get_collection_info()
+            points = info.get("points_count", 0)
+
+            if points == 0:
+                logger.info("Collection is empty — starting auto-ingest...")
+                ingest_dirs = os.getenv("INGEST_DIRS", "")
+                if ingest_dirs:
+                    dirs = [d.strip() for d in ingest_dirs.split(",") if d.strip()]
+                    for directory in dirs:
+                        logger.info(f"Auto-ingesting: {directory}")
+                        asyncio.create_task(_auto_ingest(directory))
+                else:
+                    logger.warning("INGEST_ON_STARTUP=true but INGEST_DIRS is not set")
+            else:
+                logger.info(f"Collection already has {points} points — skipping auto-ingest")
+
     except Exception as e:
         logger.warning(f"Could not connect to Qdrant on startup: {e}")
     yield
     logger.info("RAG pipeline API shutting down")
+
+
+async def _auto_ingest(directory: str):
+    """Background task to ingest a directory on startup."""
+    try:
+        repo_name = directory.rstrip("/").split("/")[-1]
+        logger.info(f"Auto-ingest started: {repo_name}")
+        result = await ingest_directory(directory=directory, repo_name=repo_name)
+        logger.info(f"Auto-ingest complete: {repo_name} — {result.get('chunks_ingested', 0)} chunks")
+    except Exception as e:
+        logger.error(f"Auto-ingest failed for {directory}: {e}")
 
 
 app = FastAPI(
