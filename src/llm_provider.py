@@ -76,7 +76,7 @@ async def _call_claude(query: str, context_chunks: list[dict]) -> dict:
     prompt = _build_prompt(query, context_chunks)
 
     message = await client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-haiku-4-5-20251001",
         max_tokens=1024,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
@@ -85,7 +85,7 @@ async def _call_claude(query: str, context_chunks: list[dict]) -> dict:
     return {
         "answer": message.content[0].text,
         "provider": "anthropic",
-        "model": "claude-sonnet-4-20250514",
+        "model": "claude-haiku-4-5-20251001",
     }
 
 
