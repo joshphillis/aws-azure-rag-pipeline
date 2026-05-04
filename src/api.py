@@ -7,6 +7,7 @@ Endpoints:
   GET  /ready               — readiness probe (checks Qdrant connection)
   GET  /info                — collection stats
   POST /query               — semantic search
+  POST /ask                 — full RAG: retrieve + generate answer
   POST /ingest/text         — ingest raw text
   POST /ingest/directory    — ingest a local directory (server-side path)
 """
@@ -25,6 +26,7 @@ from pydantic import BaseModel, Field
 from embeddings import embed_text
 from qdrant_store import search, get_collection_info, ensure_collection
 from ingest import ingest_directory, ingest_text
+from llm_provider import generate_answer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -82,6 +84,22 @@ class QueryResponse(BaseModel):
     results: list[QueryResult]
     elapsed_seconds: float
     total_results: int
+
+
+class AskRequest(BaseModel):
+    query: str = Field(..., description="Natural language question")
+    top_k: int = Field(5, ge=1, le=20, description="Number of chunks to retrieve")
+    doc_type: Optional[str] = Field(None, description="Filter by type: docs, code, runbook")
+    provider: Optional[str] = Field(None, description="LLM provider: claude or openai")
+
+
+class AskResponse(BaseModel):
+    query: str
+    answer: str
+    provider: str
+    model: str
+    sources: list[QueryResult]
+    elapsed_seconds: float
 
 
 class IngestTextRequest(BaseModel):
@@ -156,6 +174,57 @@ async def query(request: QueryRequest):
         results=[QueryResult(**r) for r in results],
         elapsed_seconds=elapsed,
         total_results=len(results),
+    )
+
+
+# ── Ask endpoint (full RAG) ────────────────────────────────────────────────────
+
+@app.post("/ask", response_model=AskResponse)
+async def ask(request: AskRequest):
+    """
+    Full RAG — retrieves relevant chunks then generates a grounded answer.
+    Set provider='claude' (default) or provider='openai' per request,
+    or globally via LLM_PROVIDER environment variable.
+    """
+    start = time.monotonic()
+
+    try:
+        query_vector = await embed_text(request.query)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+
+    try:
+        results = await search(
+            query_vector=query_vector,
+            top_k=request.top_k,
+            doc_type=request.doc_type,
+            source_filter=None,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+    try:
+        llm_response = await generate_answer(
+            query=request.query,
+            context_chunks=results,
+            provider=request.provider,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
+
+    elapsed = round(time.monotonic() - start, 3)
+    logger.info(
+        f"/ask '{request.query[:50]}' → {llm_response['provider']} "
+        f"({len(results)} chunks) in {elapsed}s"
+    )
+
+    return AskResponse(
+        query=request.query,
+        answer=llm_response["answer"],
+        provider=llm_response["provider"],
+        model=llm_response["model"],
+        sources=[QueryResult(**r) for r in results],
+        elapsed_seconds=elapsed,
     )
 
 
