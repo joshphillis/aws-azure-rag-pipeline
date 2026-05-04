@@ -131,6 +131,11 @@ class AskResponse(BaseModel):
     sources: list[QueryResult]
     elapsed_seconds: float
 
+class CompareResponse(BaseModel):
+    query: str
+    claude: dict
+    openai: dict
+    elapsed_seconds: float
 
 class IngestTextRequest(BaseModel):
     text: str = Field(..., description="Raw text to ingest")
@@ -257,6 +262,54 @@ async def ask(request: AskRequest):
         elapsed_seconds=elapsed,
     )
 
+@app.post("/compare", response_model=CompareResponse)
+async def compare(request: AskRequest):
+    """
+    Run the same query against both Claude and OpenAI simultaneously.
+    Returns both answers side by side for comparison.
+    """
+    start = time.monotonic()
+
+    try:
+        query_vector = await embed_text(request.query)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+
+    try:
+        results = await search(
+            query_vector=query_vector,
+            top_k=request.top_k,
+            doc_type=request.doc_type,
+            source_filter=None,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+    # Run both providers in parallel
+    claude_task = asyncio.create_task(
+        generate_answer(query=request.query, context_chunks=results, provider="claude")
+    )
+    openai_task = asyncio.create_task(
+        generate_answer(query=request.query, context_chunks=results, provider="openai")
+    )
+
+    claude_result, openai_result = await asyncio.gather(
+        claude_task, openai_task, return_exceptions=True
+    )
+
+    elapsed = round(time.monotonic() - start, 3)
+
+    def _format(result, provider_name):
+        if isinstance(result, Exception):
+            return {"error": str(result), "provider": provider_name, "answer": None}
+        return result
+
+    return CompareResponse(
+        query=request.query,
+        claude=_format(claude_result, "claude"),
+        openai=_format(openai_result, "openai"),
+        elapsed_seconds=elapsed,
+    )
 
 # ── Ingest endpoints ───────────────────────────────────────────────────────────
 
