@@ -4,6 +4,8 @@ A provider-agnostic retrieval-augmented generation (RAG) pipeline for infrastruc
 
 Pairs with [aws-azure-mcp-infra-server](https://github.com/joshphillis/aws-azure-mcp-infra-server) — agents can call `query_knowledge_base` as an MCP tool to retrieve relevant context before taking infrastructure actions.
 
+📐 See the full stack design in [ARCHITECTURE.md](https://github.com/joshphillis/aws-azure-mcp-infra-server/blob/master/ARCHITECTURE.md) in the MCP server repo.
+
 ---
 
 ## What Makes This Different
