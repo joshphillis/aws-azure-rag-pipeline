@@ -78,6 +78,7 @@ flowchart TB
 | `/compare` | POST | Full RAG — same query answered by Claude AND OpenAI in parallel |
 | `/ingest/text` | POST | Ingest raw text |
 | `/ingest/directory` | POST | Ingest a directory (background job) |
+| `ui.html` | Browser | Open directly in browser — chat interface for /ask and /compare |
 
 ---
 
