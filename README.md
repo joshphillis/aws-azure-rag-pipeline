@@ -188,6 +188,10 @@ curl -X POST http://localhost:8000/compare \
   }'
 ```
 
+### 6. Open the chat UI
+
+Open `ui.html` directly in your browser. No server needed — connects to the RAG API on port 8000.
+
 ---
 
 ## Retrieval + Generation Sequence (Mermaid)
